@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My Bank</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #f6f8fa;
+        color: #333;
+      }
+      header {
+        background: #004080;
+        color: white;
+        padding: 1rem 2rem;
+        text-align: center;
+      }
+      main {
+        padding: 2rem;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      h2 {
+        margin-top: 2rem;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      li {
+        background: white;
+        border: 1px solid #ddd;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border-radius: 4px;
+      }
+      label {
+        display: block;
+        margin-top: 0.5rem;
+      }
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        padding: 0.5rem;
+        margin-top: 0.25rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        margin-top: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: #007acc;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #005a99;
+      }
+      .account-title {
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>My Bank</h1>
+    </header>
+    <main>
+      <div id="root"></div>
+    </main>
+
+    <!-- React and ReactDOM via CDN.  Using UMD builds keeps this project
+         simple and eliminates the need for a bundler. -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script>
+      const { useState, useEffect } = React;
+
+      // API helper functions.  Use fetch() to call the backend and
+      // return parsed JSON.  On errors an exception is thrown so the
+      // caller can catch it and display a message.
+      async function apiGet(path) {
+        const res = await fetch(path);
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      }
+      async function apiPost(path, body) {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const text = await res.text();
+        if (!res.ok) throw new Error(text);
+        return text ? JSON.parse(text) : null;
+      }
+
+      function App() {
+        const [accounts, setAccounts] = useState([]);
+        const [error, setError] = useState('');
+        const [newName, setNewName] = useState('');
+        const [newBalance, setNewBalance] = useState('0');
+
+        // Load accounts on mount
+        useEffect(() => {
+          loadAccounts();
+        }, []);
+
+        async function loadAccounts() {
+          try {
+            const data = await apiGet('/api/accounts');
+            setAccounts(data);
+          } catch (err) {
+            setError(err.message || 'Failed to load accounts');
+          }
+        }
+
+        async function createAccount(e) {
+          e.preventDefault();
+          setError('');
+          const name = newName.trim();
+          const balance = parseFloat(newBalance);
+          if (!name) {
+            setError('Account name is required');
+            return;
+          }
+          try {
+            const acc = await apiPost('/api/accounts', { name, balance });
+            setAccounts([...accounts, acc]);
+            setNewName('');
+            setNewBalance('0');
+          } catch (err) {
+            setError(err.message);
+          }
+        }
+
+        async function deposit(id, amountStr) {
+          const amount = parseFloat(amountStr);
+          if (Number.isNaN(amount) || amount <= 0) {
+            setError('Enter a valid deposit amount');
+            return;
+          }
+          try {
+            const acc = await apiPost(`/api/accounts/${id}/deposit`, { amount });
+            setAccounts(accounts.map(a => (a.id === id ? acc : a)));
+          } catch (err) {
+            setError(err.message);
+          }
+        }
+        async function withdraw(id, amountStr) {
+          const amount = parseFloat(amountStr);
+          if (Number.isNaN(amount) || amount <= 0) {
+            setError('Enter a valid withdrawal amount');
+            return;
+          }
+          try {
+            const acc = await apiPost(`/api/accounts/${id}/withdraw`, { amount });
+            setAccounts(accounts.map(a => (a.id === id ? acc : a)));
+          } catch (err) {
+            setError(err.message);
+          }
+        }
+
+        return (
+          React.createElement(React.Fragment, null,
+            error && React.createElement('p', { style: { color: 'red' } }, error),
+            React.createElement('section', null,
+              React.createElement('h2', null, 'Existing Accounts'),
+              accounts.length === 0 && React.createElement('p', null, 'No accounts yet.'),
+              React.createElement('ul', null,
+                accounts.map(acc =>
+                  React.createElement(AccountItem, {
+                    key: acc.id,
+                    account: acc,
+                    onDeposit: deposit,
+                    onWithdraw: withdraw
+                  })
+                )
+              )
+            ),
+            React.createElement('section', null,
+              React.createElement('h2', null, 'Create New Account'),
+              React.createElement('form', { onSubmit: createAccount },
+                React.createElement('label', null, 'Name:',
+                  React.createElement('input', {
+                    type: 'text',
+                    value: newName,
+                    onChange: e => setNewName(e.target.value)
+                  })
+                ),
+                React.createElement('label', null, 'Initial balance:',
+                  React.createElement('input', {
+                    type: 'number',
+                    step: '0.01',
+                    value: newBalance,
+                    onChange: e => setNewBalance(e.target.value)
+                  })
+                ),
+                React.createElement('button', { type: 'submit' }, 'Create')
+              )
+            )
+          )
+        );
+      }
+      function AccountItem({ account, onDeposit, onWithdraw }) {
+        const [depositAmt, setDepositAmt] = useState('');
+        const [withdrawAmt, setWithdrawAmt] = useState('');
+        return (
+          React.createElement('li', null,
+            React.createElement('div', { className: 'account-title' }, `${account.name}`),
+            React.createElement('p', null, `Balance: ETB ${account.balance.toFixed(2)}`),
+            React.createElement('div', null,
+              React.createElement('label', null, 'Deposit amount:',
+                React.createElement('input', {
+                  type: 'number',
+                  step: '0.01',
+                  value: depositAmt,
+                  onChange: e => setDepositAmt(e.target.value)
+                })
+              ),
+              React.createElement('button', {
+                onClick: () => {
+                  onDeposit(account.id, depositAmt);
+                  setDepositAmt('');
+                }
+              }, 'Deposit')
+            ),
+            React.createElement('div', null,
+              React.createElement('label', null, 'Withdraw amount:',
+                React.createElement('input', {
+                  type: 'number',
+                  step: '0.01',
+                  value: withdrawAmt,
+                  onChange: e => setWithdrawAmt(e.target.value)
+                })
+              ),
+              React.createElement('button', {
+                onClick: () => {
+                  onWithdraw(account.id, withdrawAmt);
+                  setWithdrawAmt('');
+                }
+              }, 'Withdraw')
+            )
+          )
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+    </script>
+  </body>
+</html>
